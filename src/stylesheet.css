@@ -154,3 +154,101 @@
   background-color: rgba(120, 200, 255, 0.55);
   border-radius: 2px;
 }
+
+/* ===== Widget Picker (KDE-style add-widget dialog) ======================= */
+
+.gnomebeautifier-widget-picker .modal-dialog {
+  border-radius: 16px;
+  padding: 6px;
+}
+
+.gnomebeautifier-widget-picker-title {
+  font-size: 1.4em;
+  font-weight: bold;
+  padding: 6px 4px 0 4px;
+}
+
+.gnomebeautifier-widget-picker-subtitle {
+  font-size: 0.9em;
+  color: rgba(255, 255, 255, 0.65);
+  padding: 0 4px 10px 4px;
+}
+
+.gnomebeautifier-widget-picker-search {
+  min-width: 320px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  margin: 4px 4px 10px 4px;
+  background-color: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+.gnomebeautifier-widget-picker-search:focus {
+  border-color: rgba(120, 180, 255, 0.65);
+  background-color: rgba(255, 255, 255, 0.09);
+}
+
+.gnomebeautifier-widget-picker-scroll {
+  border-radius: 12px;
+  background-color: rgba(0, 0, 0, 0.16);
+  padding: 4px;
+}
+
+.gnomebeautifier-widget-picker-list {
+  spacing: 4px;
+}
+
+.gnomebeautifier-widget-picker-card {
+  padding: 10px 12px;
+  spacing: 12px;
+  border-radius: 10px;
+  background-color: rgba(255, 255, 255, 0.03);
+  border: 1px solid transparent;
+}
+
+.gnomebeautifier-widget-picker-card:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.gnomebeautifier-widget-picker-card:focus {
+  border-color: rgba(120, 180, 255, 0.65);
+}
+
+.gnomebeautifier-widget-picker-card-icon {
+  color: #ffffff;
+  padding-right: 4px;
+}
+
+.gnomebeautifier-widget-picker-card-text {
+  spacing: 2px;
+}
+
+.gnomebeautifier-widget-picker-card-name {
+  font-size: 1.0em;
+  font-weight: 500;
+}
+
+.gnomebeautifier-widget-picker-card-desc {
+  font-size: 0.85em;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.gnomebeautifier-widget-picker-card-add {
+  padding: 6px 14px;
+  border-radius: 8px;
+  background-color: rgba(120, 180, 255, 0.18);
+  color: #ffffff;
+  font-weight: 500;
+}
+
+.gnomebeautifier-widget-picker-card-add:hover {
+  background-color: rgba(120, 180, 255, 0.32);
+}
+
+.gnomebeautifier-widget-picker-empty {
+  padding: 24px 16px;
+  color: rgba(255, 255, 255, 0.55);
+  font-style: italic;
+  text-align: center;
+}

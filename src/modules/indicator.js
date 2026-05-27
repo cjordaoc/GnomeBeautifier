@@ -11,6 +11,8 @@ import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import * as BackgroundMenu from 'resource:///org/gnome/shell/ui/backgroundMenu.js';
 
+import { WidgetPicker } from './widget-picker.js';
+
 // One tag string we use to mark the menu items we inject, so we can find and
 // remove them again on disable without nuking GNOME's own items.
 const TAG = '__gnomebeautifier_item';
@@ -34,6 +36,7 @@ export class IndicatorManager {
         this._panelStatusLabel = null;
         this._originalAddBackgroundMenu = null;
         this._patchedMenus = new Set();
+        this._picker = null;
     }
 
     enable() {
@@ -44,7 +47,20 @@ export class IndicatorManager {
     disable() {
         this._removeDesktopMenuPatch();
         this._removePanelIndicator();
+        this._picker?.destroy();
+        this._picker = null;
         this._opts = null;
+    }
+
+    /** Lazy: only construct the picker the first time the user opens it. */
+    _openPicker() {
+        if (!this._picker) {
+            this._picker = new WidgetPicker({
+                listDefinitions: () => this._opts?.listWidgetDefinitions?.() ?? [],
+                onAdd: (uuid) => this._opts?.onAddWidget?.(uuid),
+            });
+        }
+        this._picker.open();
     }
 
     /** Called by extension.js whenever state changes so labels can refresh. */
@@ -223,22 +239,22 @@ export class IndicatorManager {
         prefsItem[TAG] = true;
         prefsItem.connect('activate', () => { try { o.onOpenPrefs?.(); } catch (e) { logError(e); } });
 
-        // ---- Widget submenus (Add / Remove) ----
-        const addSubmenu = new PopupMenu.PopupSubMenuMenuItem('Add Widget');
-        addSubmenu[TAG] = true;
-        const definitions = o.listWidgetDefinitions?.() ?? [];
-        if (definitions.length === 0) {
-            const empty = new PopupMenu.PopupMenuItem('(no widgets available)');
-            empty.setSensitive(false);
-            addSubmenu.menu.addMenuItem(empty);
-        } else {
-            for (const def of definitions) {
-                const item = new PopupMenu.PopupMenuItem(def.name);
-                item.connect('activate', () => o.onAddWidget?.(def.uuid));
-                addSubmenu.menu.addMenuItem(item);
-            }
-        }
+        // ---- Widget items ----
+        //
+        // "Add Widget…" opens the KDE-style picker dialog (WidgetPicker /
+        // ModalDialog) — a centered window with search, descriptions and
+        // icons, not an inline submenu. Single click → dialog opens; clicks
+        // anywhere outside or Escape closes it.
+        const addItem = new PopupMenu.PopupMenuItem('Add Widget…');
+        addItem[TAG] = true;
+        addItem.connect('activate', () => {
+            try { this._openPicker(); }
+            catch (e) { logError(e, 'GnomeBeautifier: widget picker open failed'); }
+        });
 
+        // "Remove Widget" still uses an inline submenu since the list of
+        // running instances is short, dynamic, and benefits from instance
+        // IDs in the label so users can disambiguate duplicates.
         const removeSubmenu = new PopupMenu.PopupSubMenuMenuItem('Remove Widget');
         removeSubmenu[TAG] = true;
         // Populated lazily by _refreshWidgetSubmenus so it always matches reality.
@@ -250,7 +266,7 @@ export class IndicatorManager {
             menu.addMenuItem(prevItem);
             menu.addMenuItem(refreshItem);
             menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-            menu.addMenuItem(addSubmenu);
+            menu.addMenuItem(addItem);
             menu.addMenuItem(removeSubmenu);
             menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
             menu.addMenuItem(prefsItem);
@@ -264,7 +280,7 @@ export class IndicatorManager {
             const midSep = new PopupMenu.PopupSeparatorMenuItem();
             midSep[TAG] = true;
             menu.addMenuItem(midSep, idx++);
-            menu.addMenuItem(addSubmenu, idx++);
+            menu.addMenuItem(addItem, idx++);
             menu.addMenuItem(removeSubmenu, idx++);
             const tailSep = new PopupMenu.PopupSeparatorMenuItem();
             tailSep[TAG] = true;
