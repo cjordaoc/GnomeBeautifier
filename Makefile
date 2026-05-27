@@ -5,7 +5,7 @@ SCHEMA_REL   := schemas/org.gnome.shell.extensions.gnomebeautifier.gschema.xml
 SCHEMA_FILE  := $(SRC_DIR)/$(SCHEMA_REL)
 ZIP          := $(DIST_DIR)/$(UUID).shell-extension.zip
 
-.PHONY: all pack install enable disable reinstall lint validate clean
+.PHONY: all pack install enable disable reinstall lint validate verify-prefs verify-resources clean
 
 all: pack
 
@@ -37,6 +37,25 @@ lint:
 
 validate: pack
 	@unzip -l $(ZIP)
+
+verify-resources:
+	@echo "Checking every resource:// import in src/ resolves against the installed gresource bundles..."
+	@bad=0; for path in $$(grep -hroE "resource:///[A-Za-z0-9/_.-]+" $(SRC_DIR) | sort -u); do \
+		rel=$${path#resource://}; \
+		hit=$$(for gres in /usr/share/gnome-shell/*.gresource /usr/lib/gnome-shell/*.so /usr/lib/*/gnome-shell/*.so /usr/bin/gnome-shell; do \
+			[ -f "$$gres" ] && gresource list "$$gres" 2>/dev/null | grep -qx "$$rel" && echo "$$gres" && break; \
+		done); \
+		if [ -z "$$hit" ]; then \
+			echo "  MISSING: $$path"; bad=1; \
+		else \
+			echo "  OK      $$path"; \
+		fi; \
+	done; \
+	exit $$bad
+
+verify-prefs: install
+	@echo "Opening prefs window to catch import errors interactively..."
+	gnome-extensions prefs $(UUID)
 
 clean:
 	rm -rf $(DIST_DIR)
