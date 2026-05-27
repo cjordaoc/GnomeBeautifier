@@ -3,7 +3,7 @@
   "name": "GNOME Beautifier",
   "description": "Dynamic wallpapers driven by weather, with right-click cycling, plus accent colour and dark/light theme that follow the active wallpaper. Targets GNOME 47+ (ESM).",
   "shell-version": ["47", "48"],
-  "url": "https://github.com/caio-jcalisto/GnomeBeautifier",
+  "url": "https://github.com/cjordaoc/GnomeBeautifier",
   "gettext-domain": "gnomebeautifier",
   "settings-schema": "org.gnome.shell.extensions.gnomebeautifier",
   "version-name": "0.1.0"

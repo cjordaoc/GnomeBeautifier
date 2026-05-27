@@ -13,7 +13,7 @@ weather-aware, widget-friendly scene:
 ## Install
 
 ```bash
-git clone https://github.com/caio-jcalisto/GnomeBeautifier
+git clone https://github.com/cjordaoc/GnomeBeautifier
 cd GnomeBeautifier
 bash install.sh
 ```
