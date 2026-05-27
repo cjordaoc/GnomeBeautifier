@@ -1,0 +1,156 @@
+.gnomebeautifier-panel-icon {
+  padding: 0 4px;
+}
+
+.gnomebeautifier-menu-status {
+  font-size: 0.85em;
+  color: rgba(255, 255, 255, 0.6);
+  padding: 4px 12px 8px 12px;
+}
+
+/* ===== Widget framework =================================================== */
+/*
+ * Glassmorphism is the default. The actual blur comes from Shell.BlurEffect
+ * attached in widget-base.js (BACKGROUND mode); these rules add the tint, the
+ * soft light edge, and the rounded shape. Keep the background alpha LOW — the
+ * blur is doing the visual work, not the fill colour.
+ */
+
+.gnomebeautifier-widget {
+  background-color: rgba(28, 28, 32, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 16px;
+  padding: 12px 14px;
+  color: #ffffff;
+  font-family: 'Cantarell', Sans-Serif;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35),
+              inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.gnomebeautifier-widget:hover {
+  background-color: rgba(28, 28, 32, 0.42);
+  border-color: rgba(255, 255, 255, 0.24);
+}
+
+/*
+ * Fallback when Shell.BlurEffect is unavailable (no GL / software renderer).
+ * widget-base.js adds this class on top of .gnomebeautifier-widget; the
+ * background alpha is much higher so the widget remains legible without blur.
+ */
+.gnomebeautifier-widget-glass-fallback {
+  background-color: rgba(20, 20, 22, 0.78);
+  border-color: rgba(255, 255, 255, 0.10);
+}
+
+.gnomebeautifier-widget-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding-bottom: 4px;
+  margin-bottom: 6px;
+}
+
+.gnomebeautifier-widget-title {
+  font-size: 0.75em;
+  font-weight: bold;
+  color: rgba(255, 255, 255, 0.55);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.gnomebeautifier-widget-body {
+  spacing: 4px;
+}
+
+/* ---- Clock --------------------------------------------------------------- */
+
+.gnomebeautifier-widget-clock-time {
+  font-size: 2.2em;
+  font-weight: 300;
+  color: #ffffff;
+  padding-bottom: 2px;
+}
+
+.gnomebeautifier-widget-clock-date {
+  font-size: 0.9em;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* ---- Weather ------------------------------------------------------------- */
+
+.gnomebeautifier-widget-weather-row {
+  spacing: 12px;
+}
+
+.gnomebeautifier-widget-weather-icon {
+  color: #ffffff;
+  padding-right: 6px;
+}
+
+.gnomebeautifier-widget-weather-word {
+  font-size: 1.05em;
+  font-weight: 500;
+}
+
+.gnomebeautifier-widget-weather-sub {
+  font-size: 0.8em;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+/* ---- Wallpaper info ------------------------------------------------------ */
+
+.gnomebeautifier-widget-wallpaper-swatch {
+  margin-right: 10px;
+}
+
+.gnomebeautifier-widget-wallpaper-bucket {
+  font-size: 0.95em;
+  font-weight: 500;
+}
+
+.gnomebeautifier-widget-wallpaper-file {
+  font-size: 0.8em;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.gnomebeautifier-widget-wallpaper-buttons {
+  spacing: 6px;
+  padding-top: 6px;
+}
+
+.gnomebeautifier-widget-button {
+  background-color: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: #ffffff;
+  font-size: 0.85em;
+}
+
+.gnomebeautifier-widget-button:hover {
+  background-color: rgba(255, 255, 255, 0.16);
+}
+
+/* ---- System monitor ------------------------------------------------------ */
+
+.gnomebeautifier-widget-sys-row {
+  spacing: 8px;
+}
+
+.gnomebeautifier-widget-sys-label {
+  font-size: 0.8em;
+  font-weight: bold;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.gnomebeautifier-widget-sys-value {
+  font-size: 0.9em;
+  text-align: right;
+}
+
+.gnomebeautifier-widget-sys-spark {
+  spacing: 1px;
+  padding: 4px 0;
+}
+
+.gnomebeautifier-widget-sys-bar {
+  background-color: rgba(120, 200, 255, 0.55);
+  border-radius: 2px;
+}

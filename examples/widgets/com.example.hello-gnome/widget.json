@@ -1,0 +1,8 @@
+{
+  "uuid":        "com.example.hello-gnome",
+  "name":        "Hello, GNOME!",
+  "description": "Reference example for community widget authors. Says hi and shows the time.",
+  "version":     1,
+  "api-version": 1,
+  "main":        "widget.js"
+}

@@ -1,0 +1,22 @@
+# Packed extension artifacts
+dist/
+*.shell-extension.zip
+
+# Setup-script logs
+*.log
+gnomebeautifier-setup-*.log
+
+# Editor / OS noise
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Local user widgets (community widgets the user has dropped in)
+# We never want to commit the user's local widget collection.
+local-widgets/
+
+# Cache the install / setup scripts may create
+.cache/

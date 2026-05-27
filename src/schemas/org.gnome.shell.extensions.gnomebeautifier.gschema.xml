@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist gettext-domain="gnomebeautifier">
+
+  <enum id="org.gnome.shell.extensions.gnomebeautifier.LocationSource">
+    <value nick="manual" value="0"/>
+    <value nick="ip" value="1"/>
+    <value nick="geoclue" value="2"/>
+  </enum>
+
+  <schema id="org.gnome.shell.extensions.gnomebeautifier"
+          path="/org/gnome/shell/extensions/gnomebeautifier/">
+
+    <key name="wallpaper-root" type="s">
+      <default>""</default>
+      <summary>Root directory holding the weather-bucket subfolders</summary>
+      <description>Empty string means the default ($HOME/Pictures/Weather-Wallpapers). Subfolders expected: clear, clouds, rain, storm, snow, fog, night, default.</description>
+    </key>
+
+    <key name="rotation-interval-minutes" type="u">
+      <default>30</default>
+      <range min="1" max="1440"/>
+      <summary>How often (minutes) to advance to the next wallpaper</summary>
+    </key>
+
+    <key name="rotation-enabled" type="b">
+      <default>true</default>
+      <summary>Automatically rotate wallpaper on the configured interval</summary>
+    </key>
+
+    <key name="weather-enabled" type="b">
+      <default>true</default>
+      <summary>Choose the wallpaper bucket from current weather instead of cycling all buckets</summary>
+    </key>
+
+    <key name="weather-refresh-minutes" type="u">
+      <default>60</default>
+      <range min="15" max="720"/>
+      <summary>How often (minutes) to refresh the weather lookup</summary>
+    </key>
+
+    <key name="location-source" enum="org.gnome.shell.extensions.gnomebeautifier.LocationSource">
+      <default>'ip'</default>
+      <summary>How to determine the user location for the weather lookup</summary>
+    </key>
+
+    <key name="manual-latitude" type="d">
+      <default>0.0</default>
+      <range min="-90.0" max="90.0"/>
+      <summary>Latitude used when location-source = manual</summary>
+    </key>
+
+    <key name="manual-longitude" type="d">
+      <default>0.0</default>
+      <range min="-180.0" max="180.0"/>
+      <summary>Longitude used when location-source = manual</summary>
+    </key>
+
+    <key name="accent-follow-enabled" type="b">
+      <default>true</default>
+      <summary>Set the GNOME accent colour from the active wallpaper</summary>
+    </key>
+
+    <key name="color-scheme-follow-enabled" type="b">
+      <default>true</default>
+      <summary>Switch GNOME color-scheme (light/dark) based on wallpaper luminance</summary>
+    </key>
+
+    <key name="current-bucket" type="s">
+      <default>"default"</default>
+      <summary>The most recently selected weather bucket (runtime state)</summary>
+    </key>
+
+    <key name="current-index" type="u">
+      <default>0</default>
+      <summary>Index of the current wallpaper within the active bucket (runtime state)</summary>
+    </key>
+
+    <key name="widgets-enabled" type="b">
+      <default>true</default>
+      <summary>Master switch for the desktop widget subsystem</summary>
+    </key>
+
+    <key name="widget-instances" type="s">
+      <default>"[]"</default>
+      <summary>JSON-encoded array of widget instance records</summary>
+      <description>Each entry: {instanceId, uuid, monitor, x, y, config}. Written by the running extension; safe to edit manually but malformed JSON resets to an empty list.</description>
+    </key>
+
+  </schema>
+</schemalist>
