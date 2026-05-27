@@ -155,6 +155,20 @@
   border-radius: 2px;
 }
 
+/* ---- Resize grip --------------------------------------------------------- */
+
+.gnomebeautifier-widget-resize-grip {
+  background-color: rgba(255, 255, 255, 0.18);
+  border-radius: 0 0 14px 0;
+  margin: 2px;
+  border-top: 1px solid rgba(255, 255, 255, 0.10);
+  border-left: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+.gnomebeautifier-widget-resize-grip:hover {
+  background-color: rgba(120, 180, 255, 0.45);
+}
+
 /* ===== Widget Picker (KDE-style add-widget dialog) ======================= */
 
 .gnomebeautifier-widget-picker .modal-dialog {

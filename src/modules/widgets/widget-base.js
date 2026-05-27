@@ -1,99 +1,100 @@
-// Base class for every widget the user can drop on the desktop. Owns the
-// outer St container, drag-to-position handling, lifecycle hook surface,
-// and per-instance configuration access. Concrete widgets subclass this
-// and override onMount() / onTick() / onUnmount() / onConfigChanged().
+// Base class for every widget the user can drop on the desktop.
+//
+// Placement: widgets live as children of `global.window_group`, pinned just
+// above `Main.layoutManager._backgroundGroup`. That puts them on the desktop
+// layer — wallpaper sits below, but any opened window in the same group is
+// stacked above and OCCLUDES the widget (the KDE Plasmoid behaviour, and
+// what owners actually expect of a desktop widget). `addChrome` would put us
+// on the panel/HUD layer instead, which is wrong for this use-case.
+//
+// Interaction:
+//   - Header is the drag handle. Buttons and other reactive children inside
+//     the body work normally because the body is not reactive at the
+//     container level.
+//   - Right-click anywhere on the widget opens a small context menu
+//     (Remove). The popup is anchored via `layoutManager.dummyCursor` so it
+//     appears at the click position (same trick `BackgroundMenu` uses).
+//   - The bottom-right corner is a resize grip. Drag to resize; release
+//     persists width/height into the widget's config.
+//   - Fullscreen windows hide all widgets via the display signal — no
+//     `trackFullscreen` from `addChrome`, so we have to do it ourselves.
 
 import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
 import Shell from 'gi://Shell';
 import St from 'gi://St';
 
-// Glassmorphism defaults applied to every widget container. The actual frosted
-// effect comes from Shell.BlurEffect in BACKGROUND mode (blurs whatever is
-// painted behind the actor — wallpaper, windows under the widget — while
-// keeping the widget's own text/icons crisp). The CSS layer adds the
-// translucent tint and the subtle light edge.
-const GLASS_SIGMA = 24;
-const GLASS_BRIGHTNESS = 1.0;
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
+import * as BoxPointer from 'resource:///org/gnome/shell/ui/boxpointer.js';
 
 const DEFAULT_WIDTH = 220;
 const DEFAULT_HEIGHT = 120;
+const MIN_WIDTH = 140;
+const MIN_HEIGHT = 80;
 const DRAG_THRESHOLD_PX = 4;
+const RESIZE_GRIP_SIZE = 18;
+
+const GLASS_SIGMA = 24;
+const GLASS_BRIGHTNESS = 1.0;
 
 /**
- * Lifecycle (called by WidgetManager):
- *   constructor(ctx)   – cheap; never touch the stage here.
- *   mount(stageX, stageY) – attach to layoutManager, run onMount(), start tick.
- *   unmount()          – stop tick, run onUnmount(), detach from layoutManager.
- *
  * Subclasses MUST implement:
- *   - get displayName()   – human-readable, shown in menus / prefs.
- *   - get tickIntervalSeconds() – integer ≥ 1, or 0 to disable the tick.
- *   - onMount()           – build child actors inside this.body.
- *   - onTick()            – periodic refresh (no-op if tickIntervalSeconds=0).
- *   - onUnmount()         – release any per-instance resources you held.
+ *   - get displayName()         human label.
+ *   - get tickIntervalSeconds() integer ≥ 1, or 0 for no tick.
+ *   - onMount()                 build child actors inside this.body.
+ *   - onTick()                  periodic refresh.
+ *   - onUnmount()               release per-instance resources.
  *
  * Subclasses MAY override:
- *   - onConfigChanged(key) – react to widget-config changes.
- *   - defaultSize()        – return {width, height} for first placement.
- *   - defaultConfig()      – return an object merged into instance.config on creation.
+ *   - onConfigChanged(key)
+ *   - onResize(width, height)   notified after the user resizes the widget.
+ *   - defaultSize()
+ *   - defaultConfig()
  */
 export class WidgetBase {
-    /**
-     * @param {object} ctx  Shared context passed by WidgetManager.
-     * @param {string} ctx.uuid                Widget type UUID (e.g. 'clock').
-     * @param {string} ctx.instanceId          Per-instance UUID.
-     * @param {object} ctx.config              Per-instance config object (mutable).
-     * @param {(patch: object) => void} ctx.persistConfig   Save partial config patch.
-     * @param {(x: number, y: number, monitor: number) => void} ctx.persistPosition
-     * @param {() => void} ctx.requestRemove   Ask the manager to destroy this instance.
-     * @param {object} ctx.services            Cross-cutting services (see WidgetManager.services()).
-     */
     constructor(ctx) {
         this._ctx = ctx;
         this._tickId = 0;
+        this._mounted = false;
+
         this._dragging = false;
         this._dragOffset = [0, 0];
-        this._mounted = false;
-        this._stagePos = { x: ctx.x ?? 80, y: ctx.y ?? 80, monitor: ctx.monitor ?? 0 };
+        this._dragMoved = false;
+
+        this._resizing = false;
+        this._resizeStart = null;
+
+        this._stagePos = {
+            x: ctx.x ?? 80,
+            y: ctx.y ?? 80,
+            monitor: ctx.monitor ?? 0,
+        };
 
         this.container = null;
         this.body = null;
+        this._header = null;
+        this._resizeGrip = null;
+        this._contextMenu = null;
+        this._fullscreenSignal = 0;
     }
 
     // ---- Subclass surface -----------------------------------------------
 
-    /** @abstract */
     get displayName() { return 'Widget'; }
-
-    /** Seconds between onTick() calls. 0 disables the tick. @abstract */
     get tickIntervalSeconds() { return 0; }
-
-    /** @abstract */
     onMount() {}
-
-    /** @abstract */
     onTick() {}
-
-    /** @abstract */
     onUnmount() {}
-
     onConfigChanged(_key) {}
+    onResize(_width, _height) {}
+    defaultSize() { return { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT }; }
+    defaultConfig() { return {}; }
 
-    defaultSize() {
-        return { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT };
-    }
+    // ---- Helpers --------------------------------------------------------
 
-    defaultConfig() {
-        return {};
-    }
-
-    // ---- Public helpers exposed to subclasses ---------------------------
-
-    /** @returns {object} The per-instance config (mutable; persist via setConfig). */
-    get config() {
-        return this._ctx.config;
-    }
+    get config() { return this._ctx.config; }
+    services() { return this._ctx.services; }
 
     setConfig(patch) {
         Object.assign(this._ctx.config, patch);
@@ -102,30 +103,29 @@ export class WidgetBase {
             this.onConfigChanged(key);
     }
 
-    /** Cross-cutting services (wallpaper, weather, accent, settings). */
-    services() {
-        return this._ctx.services;
-    }
+    // ---- Lifecycle ------------------------------------------------------
 
-    // ---- Lifecycle invoked by WidgetManager -----------------------------
-
-    mount(layoutManager) {
+    mount(_unusedLayoutManager) {
         if (this._mounted)
             return;
 
-        const { width, height } = this.defaultSize();
-        this.container = new St.BoxLayout({
-            vertical: true,
-            reactive: true,
-            track_hover: true,
-            style_class: 'gnomebeautifier-widget gnomebeautifier-widget-glass',
+        // Size: persisted dimensions in config win; otherwise subclass default.
+        const ds = this.defaultSize();
+        const width = this.config.__width ?? ds.width;
+        const height = this.config.__height ?? ds.height;
+
+        // Outer container uses BinLayout so the resize grip can overlay the
+        // inner content at the corner.
+        this.container = new St.Widget({
+            layout_manager: new Clutter.BinLayout(),
             width,
             height,
+            reactive: true,           // captures right-click for context menu
+            track_hover: true,
+            style_class: 'gnomebeautifier-widget gnomebeautifier-widget-glass',
         });
 
-        // Frosted-glass blur of whatever is painted behind the widget
-        // (wallpaper, windows below). Subclasses can disable by setting
-        // this.disableGlass = true before mount() — useful for opaque widgets.
+        // Glassmorphism blur of whatever is painted behind (wallpaper, etc.).
         if (!this.disableGlass) {
             try {
                 this._glassEffect = new Shell.BlurEffect({
@@ -135,87 +135,130 @@ export class WidgetBase {
                 });
                 this.container.add_effect_with_name('gnomebeautifier-glass', this._glassEffect);
             } catch (e) {
-                // BlurEffect can fail on software-rendered sessions (no GL).
-                // Fall back to the plain translucent CSS look; the widget is
-                // still usable, just not frosted.
-                logError(e, 'GnomeBeautifier: glass effect unavailable; falling back to flat translucent style');
+                logError(e, 'GnomeBeautifier: glass effect unavailable; flat fallback');
                 this.container.add_style_class_name('gnomebeautifier-widget-glass-fallback');
             }
         }
 
-        // Inner header — drag handle area with the widget's display name. We
-        // keep it inside the same reactive container so the whole widget is
-        // draggable; the header just gives users a visual cue.
-        const header = new St.BoxLayout({
+        const inner = new St.BoxLayout({
+            orientation: Clutter.Orientation.VERTICAL,
+            x_expand: true,
+            y_expand: true,
+            x_align: Clutter.ActorAlign.FILL,
+            y_align: Clutter.ActorAlign.FILL,
+        });
+
+        this._header = new St.BoxLayout({
             style_class: 'gnomebeautifier-widget-header',
             x_expand: true,
+            reactive: true,           // drag-to-move handle
+            track_hover: true,
         });
         const title = new St.Label({
             text: this.displayName,
             style_class: 'gnomebeautifier-widget-title',
             x_expand: true,
         });
-        header.add_child(title);
+        this._header.add_child(title);
 
         this.body = new St.BoxLayout({
-            vertical: true,
+            orientation: Clutter.Orientation.VERTICAL,
             x_expand: true,
             y_expand: true,
             style_class: 'gnomebeautifier-widget-body',
         });
 
-        this.container.add_child(header);
-        this.container.add_child(this.body);
+        inner.add_child(this._header);
+        inner.add_child(this.body);
 
-        this._wireDrag();
-
-        layoutManager.addChrome(this.container, {
-            trackFullscreen: true,
-            affectsStruts: false,
+        this._resizeGrip = new St.Widget({
+            width: RESIZE_GRIP_SIZE,
+            height: RESIZE_GRIP_SIZE,
+            x_align: Clutter.ActorAlign.END,
+            y_align: Clutter.ActorAlign.END,
+            x_expand: false,
+            y_expand: false,
+            reactive: true,
+            track_hover: true,
+            style_class: 'gnomebeautifier-widget-resize-grip',
         });
+
+        this.container.add_child(inner);
+        this.container.add_child(this._resizeGrip);
+
+        this._buildContextMenu();
+        this._wireHeaderDrag();
+        this._wireResize();
+        this._wireRightClickMenu();
+
+        // Place on the desktop layer: a child of global.window_group, stacked
+        // just above the background group. Windows occlude us automatically.
+        global.window_group.add_child(this.container);
+        const bgGroup = Main.layoutManager._backgroundGroup;
+        if (bgGroup && bgGroup.get_parent() === global.window_group)
+            global.window_group.set_child_above_sibling(this.container, bgGroup);
+        else
+            global.window_group.set_child_at_index(this.container, 0);
+
         this.container.set_position(this._stagePos.x, this._stagePos.y);
 
-        try {
-            this.onMount();
-        } catch (e) {
-            logError(e, `GnomeBeautifier widget mount failed: ${this._ctx.uuid}/${this._ctx.instanceId}`);
-        }
+        // Auto-hide when something goes fullscreen on this monitor.
+        this._fullscreenSignal = global.display.connect('in-fullscreen-changed',
+            () => this._refreshFullscreenVisibility());
+        this._refreshFullscreenVisibility();
+
+        try { this.onMount(); }
+        catch (e) { logError(e, `GnomeBeautifier widget mount: ${this._ctx.uuid}`); }
 
         this._startTick();
         this._mounted = true;
     }
 
-    unmount(layoutManager) {
+    unmount(_unusedLayoutManager) {
         if (!this._mounted)
             return;
         this._mounted = false;
         this._stopTick();
-        try {
-            this.onUnmount();
-        } catch (e) {
-            logError(e, `GnomeBeautifier widget unmount failed: ${this._ctx.uuid}/${this._ctx.instanceId}`);
+
+        try { this.onUnmount(); }
+        catch (e) { logError(e, `GnomeBeautifier widget unmount: ${this._ctx.uuid}`); }
+
+        if (this._fullscreenSignal) {
+            global.display.disconnect(this._fullscreenSignal);
+            this._fullscreenSignal = 0;
         }
+
+        if (this._contextMenu) {
+            try { this._contextMenu.destroy(); } catch (_e) {}
+            this._contextMenu = null;
+        }
+        if (this._menuManager) {
+            this._menuManager = null;
+        }
+
         if (this.container) {
             if (this._glassEffect) {
                 this.container.remove_effect(this._glassEffect);
                 this._glassEffect = null;
             }
-            layoutManager.removeChrome(this.container);
+            const parent = this.container.get_parent();
+            if (parent)
+                parent.remove_child(this.container);
             this.container.destroy();
             this.container = null;
             this.body = null;
+            this._header = null;
+            this._resizeGrip = null;
         }
     }
 
-    // ---- Internal: drag + tick ------------------------------------------
+    // ---- Drag (header only) --------------------------------------------
 
-    _wireDrag() {
+    _wireHeaderDrag() {
         const c = this.container;
-        // We implement drag manually rather than using Clutter.DragAction so
-        // we can keep the widget anchored exactly under the cursor and persist
-        // the position only on release. Threshold prevents accidental drag on
-        // single clicks.
-        c.connect('button-press-event', (_a, event) => {
+        const h = this._header;
+
+        h.connect('button-press-event', (_a, event) => {
             if (event.get_button() !== 1)
                 return Clutter.EVENT_PROPAGATE;
             const [eventX, eventY] = event.get_coords();
@@ -227,7 +270,7 @@ export class WidgetBase {
             return Clutter.EVENT_STOP;
         });
 
-        c.connect('motion-event', (_a, event) => {
+        h.connect('motion-event', (_a, event) => {
             if (!this._dragging)
                 return Clutter.EVENT_PROPAGATE;
             const [eventX, eventY] = event.get_coords();
@@ -243,7 +286,7 @@ export class WidgetBase {
             return Clutter.EVENT_STOP;
         });
 
-        c.connect('button-release-event', (_a, event) => {
+        h.connect('button-release-event', (_a, _event) => {
             if (!this._dragging)
                 return Clutter.EVENT_PROPAGATE;
             this._dragging = false;
@@ -253,17 +296,114 @@ export class WidgetBase {
                 this._stagePos.y = y;
                 this._ctx.persistPosition(x, y, this._stagePos.monitor);
             }
-            // A press-without-drag on a right-click is the request-remove gesture.
-            if (!this._dragMoved && event.get_button() === 3)
-                this._ctx.requestRemove?.();
             return Clutter.EVENT_STOP;
         });
     }
 
+    // ---- Resize (bottom-right grip) ------------------------------------
+
+    _wireResize() {
+        const g = this._resizeGrip;
+        const c = this.container;
+
+        g.connect('button-press-event', (_a, event) => {
+            if (event.get_button() !== 1)
+                return Clutter.EVENT_PROPAGATE;
+            const [eventX, eventY] = event.get_coords();
+            this._resizing = true;
+            this._resizeStart = {
+                pointerX: eventX,
+                pointerY: eventY,
+                width: c.width,
+                height: c.height,
+            };
+            return Clutter.EVENT_STOP;
+        });
+
+        g.connect('motion-event', (_a, event) => {
+            if (!this._resizing) return Clutter.EVENT_PROPAGATE;
+            const [eventX, eventY] = event.get_coords();
+            const dx = eventX - this._resizeStart.pointerX;
+            const dy = eventY - this._resizeStart.pointerY;
+            const newW = Math.max(MIN_WIDTH, this._resizeStart.width + dx);
+            const newH = Math.max(MIN_HEIGHT, this._resizeStart.height + dy);
+            c.set_size(newW, newH);
+            return Clutter.EVENT_STOP;
+        });
+
+        g.connect('button-release-event', (_a, _event) => {
+            if (!this._resizing) return Clutter.EVENT_PROPAGATE;
+            this._resizing = false;
+            this._resizeStart = null;
+            const w = c.width;
+            const h = c.height;
+            this._ctx.persistConfig({ __width: w, __height: h });
+            this._ctx.config.__width = w;
+            this._ctx.config.__height = h;
+            try { this.onResize(w, h); }
+            catch (e) { logError(e, `GnomeBeautifier widget onResize: ${this._ctx.uuid}`); }
+            return Clutter.EVENT_STOP;
+        });
+    }
+
+    // ---- Right-click context menu --------------------------------------
+
+    _buildContextMenu() {
+        this._contextMenu = new PopupMenu.PopupMenu(
+            Main.layoutManager.dummyCursor, 0, St.Side.TOP);
+        Main.layoutManager.uiGroup.add_child(this._contextMenu.actor);
+        this._contextMenu.actor.hide();
+
+        const header = new PopupMenu.PopupMenuItem(this.displayName);
+        header.setSensitive(false);
+        this._contextMenu.addMenuItem(header);
+        this._contextMenu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+
+        const removeItem = new PopupMenu.PopupMenuItem('Remove this widget');
+        removeItem.connect('activate', () => {
+            try { this._ctx.requestRemove?.(); }
+            catch (e) { logError(e, 'GnomeBeautifier widget remove failed'); }
+        });
+        this._contextMenu.addMenuItem(removeItem);
+
+        this._menuManager = new PopupMenu.PopupMenuManager(this.container);
+        this._menuManager.addMenu(this._contextMenu);
+    }
+
+    _wireRightClickMenu() {
+        const c = this.container;
+        c.connect('button-press-event', (_a, event) => {
+            if (event.get_button() !== 3)
+                return Clutter.EVENT_PROPAGATE;
+            const [x, y] = event.get_coords();
+            Main.layoutManager.setDummyCursorGeometry(x, y, 0, 0);
+            this._contextMenu.open(BoxPointer.PopupAnimation.FULL);
+            return Clutter.EVENT_STOP;
+        });
+    }
+
+    // ---- Fullscreen handling -------------------------------------------
+
+    _refreshFullscreenVisibility() {
+        // Hide if ANY monitor has fullscreen. Multi-monitor refinement could
+        // hide only the widget on the affected monitor; v1 keeps it simple.
+        const nMonitors = global.display.get_n_monitors();
+        let anyFs = false;
+        for (let i = 0; i < nMonitors; i++) {
+            if (global.display.get_monitor_in_fullscreen(i)) {
+                anyFs = true;
+                break;
+            }
+        }
+        if (this.container)
+            this.container.visible = !anyFs;
+    }
+
+    // ---- Tick ----------------------------------------------------------
+
     _startTick() {
         const seconds = this.tickIntervalSeconds | 0;
-        if (seconds <= 0)
-            return;
+        if (seconds <= 0) return;
         this._tickId = GLib.timeout_add_seconds(
             GLib.PRIORITY_DEFAULT,
             seconds,
@@ -273,8 +413,6 @@ export class WidgetBase {
                 return GLib.SOURCE_CONTINUE;
             },
         );
-        // Trigger an immediate tick so widgets render their first state without
-        // waiting a full interval.
         try { this.onTick(); }
         catch (e) { logError(e, `GnomeBeautifier widget initial tick: ${this._ctx.uuid}`); }
     }

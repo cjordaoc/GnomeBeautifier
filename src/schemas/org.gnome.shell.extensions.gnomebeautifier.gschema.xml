@@ -17,7 +17,7 @@
     </key>
 
     <key name="rotation-interval-minutes" type="u">
-      <default>30</default>
+      <default>10</default>
       <range min="1" max="1440"/>
       <summary>How often (minutes) to advance to the next wallpaper</summary>
     </key>
@@ -73,6 +73,46 @@
     <key name="current-index" type="u">
       <default>0</default>
       <summary>Index of the current wallpaper within the active bucket (runtime state)</summary>
+    </key>
+
+    <key name="current-time-bucket" type="s">
+      <default>""</default>
+      <summary>The most recently computed time-of-day bucket (morning/afternoon/evening/night) — empty disables time-of-day layering</summary>
+    </key>
+
+    <key name="time-of-day-enabled" type="b">
+      <default>true</default>
+      <summary>Layer wallpaper selection by time of day (morning/afternoon/evening/night) under the weather bucket</summary>
+    </key>
+
+    <key name="last-resolved-latitude" type="d">
+      <default>0.0</default>
+      <summary>Latitude resolved by the last successful IP lookup (display only)</summary>
+    </key>
+
+    <key name="last-resolved-longitude" type="d">
+      <default>0.0</default>
+      <summary>Longitude resolved by the last successful IP lookup (display only)</summary>
+    </key>
+
+    <key name="last-resolved-city" type="s">
+      <default>""</default>
+      <summary>City reported by the last successful IP lookup (display only)</summary>
+    </key>
+
+    <key name="last-resolved-region" type="s">
+      <default>""</default>
+      <summary>Region/state reported by the last successful IP lookup (display only)</summary>
+    </key>
+
+    <key name="last-resolved-country" type="s">
+      <default>""</default>
+      <summary>Country reported by the last successful IP lookup (display only)</summary>
+    </key>
+
+    <key name="last-rotation-timestamp" type="x">
+      <default>0</default>
+      <summary>Unix epoch seconds of the most recent automatic rotation (display only)</summary>
     </key>
 
     <key name="widgets-enabled" type="b">
