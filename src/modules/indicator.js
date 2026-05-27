@@ -34,7 +34,7 @@ export class IndicatorManager {
         this._opts = opts;
         this._panelIndicator = null;
         this._panelStatusLabel = null;
-        this._originalAddBackgroundMenu = null;
+        this._originalBackgroundMenuOpen = null;
         this._patchedMenus = new Set();
         this._picker = null;
     }
@@ -129,42 +129,47 @@ export class IndicatorManager {
     // ---------- Desktop background-menu monkey-patch ----------
 
     _installDesktopMenuPatch() {
-        // Save and wrap addBackgroundMenu so any future background actor gets
-        // our items appended after GNOME builds the menu.
-        this._originalAddBackgroundMenu = BackgroundMenu.addBackgroundMenu;
+        // ESM modules export const bindings — `BackgroundMenu.addBackgroundMenu`
+        // is read-only, so reassigning it (the old approach) throws TypeError
+        // and kills enable(). Instead, patch the BackgroundMenu *class's*
+        // prototype: classes are exported as regular properties whose
+        // prototypes are mutable. Wrapping `open` lazily injects our items the
+        // first time any menu (existing or future) is opened. The injection
+        // itself is idempotent via _injectInto's _patchedMenus guard.
+        const Proto = BackgroundMenu.BackgroundMenu.prototype;
+        this._originalBackgroundMenuOpen = Proto.open;
 
         const self = this;
-        BackgroundMenu.addBackgroundMenu = function (actor, layoutManager) {
-            self._originalAddBackgroundMenu(actor, layoutManager);
-            const menu = actor._backgroundMenu;
-            if (menu) {
-                self._injectInto(menu);
+        Proto.open = function (animate) {
+            try {
+                self._injectInto(this);
                 self._refreshWidgetSubmenus();
+            } catch (e) {
+                logError(e, 'GnomeBeautifier: desktop menu injection failed');
             }
+            return self._originalBackgroundMenuOpen.call(this, animate);
         };
 
-        // Retro-patch background actors that were created before we loaded.
+        // Retro-inject into any menus already constructed before we loaded.
+        // Future menus (e.g. after a monitor change) hit the wrapper above.
         const layout = Main.layoutManager;
-        const monitors = layout?.monitors ?? [];
-        for (const monitor of monitors) {
-            // GNOME stores the actor on the BackgroundManager; walk its actor tree.
-            const actor = monitor.actor ?? null;
-            if (actor && actor._backgroundMenu)
-                this._injectInto(actor._backgroundMenu);
-        }
         if (layout?._bgManagers) {
             for (const mgr of layout._bgManagers) {
-                const actor = mgr.backgroundActor ?? mgr._backgroundActor ?? null;
-                if (actor && actor._backgroundMenu)
-                    this._injectInto(actor._backgroundMenu);
+                const menu = mgr.backgroundActor?._backgroundMenu;
+                if (menu) {
+                    this._injectInto(menu);
+                    this._refreshWidgetSubmenus();
+                }
             }
         }
     }
 
     _removeDesktopMenuPatch() {
-        if (this._originalAddBackgroundMenu) {
-            BackgroundMenu.addBackgroundMenu = this._originalAddBackgroundMenu;
-            this._originalAddBackgroundMenu = null;
+        // Restore the original open() so the BackgroundMenu prototype goes
+        // back to stock behaviour for any future menus.
+        if (this._originalBackgroundMenuOpen) {
+            BackgroundMenu.BackgroundMenu.prototype.open = this._originalBackgroundMenuOpen;
+            this._originalBackgroundMenuOpen = null;
         }
 
         for (const menu of this._patchedMenus) {
