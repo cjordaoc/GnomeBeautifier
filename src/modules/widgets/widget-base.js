@@ -114,13 +114,17 @@ export class WidgetBase {
         const width = this.config.__width ?? ds.width;
         const height = this.config.__height ?? ds.height;
 
-        // Outer container uses BinLayout so the resize grip can overlay the
-        // inner content at the corner.
-        this.container = new St.Widget({
-            layout_manager: new Clutter.BinLayout(),
+        // Container is a plain vertical BoxLayout. The resize grip is a
+        // SIBLING actor in window_group (not a child of the container), kept
+        // visually pinned to the container's bottom-right via notify::
+        // handlers. BinLayout for overlay didn't work reliably across mutter
+        // versions — children fought over the cell and the grip ended up
+        // inset against the content, not the container corner.
+        this.container = new St.BoxLayout({
+            orientation: Clutter.Orientation.VERTICAL,
             width,
             height,
-            reactive: true,           // captures right-click for context menu
+            reactive: true,           // right-click → context menu
             track_hover: true,
             style_class: 'gnomebeautifier-widget gnomebeautifier-widget-glass',
         });
@@ -139,14 +143,6 @@ export class WidgetBase {
                 this.container.add_style_class_name('gnomebeautifier-widget-glass-fallback');
             }
         }
-
-        const inner = new St.BoxLayout({
-            orientation: Clutter.Orientation.VERTICAL,
-            x_expand: true,
-            y_expand: true,
-            x_align: Clutter.ActorAlign.FILL,
-            y_align: Clutter.ActorAlign.FILL,
-        });
 
         this._header = new St.BoxLayout({
             style_class: 'gnomebeautifier-widget-header',
@@ -168,23 +164,20 @@ export class WidgetBase {
             style_class: 'gnomebeautifier-widget-body',
         });
 
-        inner.add_child(this._header);
-        inner.add_child(this.body);
+        this.container.add_child(this._header);
+        this.container.add_child(this.body);
 
+        // Resize grip: separate floating actor pinned to container's
+        // bottom-right via notify handlers. Kept as a sibling of container
+        // (not a child) so widget layout can't push it around.
         this._resizeGrip = new St.Widget({
             width: RESIZE_GRIP_SIZE,
             height: RESIZE_GRIP_SIZE,
-            x_align: Clutter.ActorAlign.END,
-            y_align: Clutter.ActorAlign.END,
-            x_expand: false,
-            y_expand: false,
             reactive: true,
             track_hover: true,
             style_class: 'gnomebeautifier-widget-resize-grip',
+            visible: true,
         });
-
-        this.container.add_child(inner);
-        this.container.add_child(this._resizeGrip);
 
         this._buildContextMenu();
         this._wireHeaderDrag();
@@ -192,15 +185,29 @@ export class WidgetBase {
         this._wireRightClickMenu();
 
         // Place on the desktop layer: a child of global.window_group, stacked
-        // just above the background group. Windows occlude us automatically.
+        // just above the background group. Critically, we also connect to
+        // 'actor-added' so that any NEW window mapped after us is placed
+        // above us (default Clutter behaviour is to add at top — windows
+        // naturally come above — but we re-lower defensively in case mutter
+        // or focus changes raise us).
         global.window_group.add_child(this.container);
-        const bgGroup = Main.layoutManager._backgroundGroup;
-        if (bgGroup && bgGroup.get_parent() === global.window_group)
-            global.window_group.set_child_above_sibling(this.container, bgGroup);
-        else
-            global.window_group.set_child_at_index(this.container, 0);
+        global.window_group.add_child(this._resizeGrip);
+        this._lowerToDesktopLayer();
+
+        this._actorAddedSignal = global.window_group.connect('actor-added',
+            (group, actor) => {
+                if (actor === this.container || actor === this._resizeGrip)
+                    return;
+                // A new window was added: ensure we (and the grip) are below it.
+                this._lowerToDesktopLayer();
+            });
 
         this.container.set_position(this._stagePos.x, this._stagePos.y);
+        this._updateGripPosition();
+        this.container.connect('notify::width',  () => this._updateGripPosition());
+        this.container.connect('notify::height', () => this._updateGripPosition());
+        this.container.connect('notify::x',      () => this._updateGripPosition());
+        this.container.connect('notify::y',      () => this._updateGripPosition());
 
         // Auto-hide when something goes fullscreen on this monitor.
         this._fullscreenSignal = global.display.connect('in-fullscreen-changed',
@@ -227,6 +234,10 @@ export class WidgetBase {
             global.display.disconnect(this._fullscreenSignal);
             this._fullscreenSignal = 0;
         }
+        if (this._actorAddedSignal) {
+            global.window_group.disconnect(this._actorAddedSignal);
+            this._actorAddedSignal = 0;
+        }
 
         if (this._contextMenu) {
             try { this._contextMenu.destroy(); } catch (_e) {}
@@ -234,6 +245,13 @@ export class WidgetBase {
         }
         if (this._menuManager) {
             this._menuManager = null;
+        }
+
+        if (this._resizeGrip) {
+            const gp = this._resizeGrip.get_parent();
+            if (gp) gp.remove_child(this._resizeGrip);
+            this._resizeGrip.destroy();
+            this._resizeGrip = null;
         }
 
         if (this.container) {
@@ -248,8 +266,33 @@ export class WidgetBase {
             this.container = null;
             this.body = null;
             this._header = null;
-            this._resizeGrip = null;
         }
+    }
+
+    /** Ensure container + grip are stacked just above the background group. */
+    _lowerToDesktopLayer() {
+        const wg = global.window_group;
+        if (!wg || !this.container) return;
+        const bg = Main.layoutManager._backgroundGroup;
+        if (bg && bg.get_parent() === wg) {
+            wg.set_child_above_sibling(this.container, bg);
+            if (this._resizeGrip && this._resizeGrip.get_parent() === wg)
+                wg.set_child_above_sibling(this._resizeGrip, this.container);
+        } else {
+            wg.set_child_at_index(this.container, 0);
+            if (this._resizeGrip && this._resizeGrip.get_parent() === wg)
+                wg.set_child_at_index(this._resizeGrip, 1);
+        }
+    }
+
+    /** Re-pin the resize grip to the container's bottom-right corner. */
+    _updateGripPosition() {
+        if (!this._resizeGrip || !this.container) return;
+        const [cx, cy] = this.container.get_position();
+        this._resizeGrip.set_position(
+            Math.round(cx + this.container.width  - RESIZE_GRIP_SIZE - 4),
+            Math.round(cy + this.container.height - RESIZE_GRIP_SIZE - 4),
+        );
     }
 
     // ---- Drag (header only) --------------------------------------------
@@ -371,15 +414,19 @@ export class WidgetBase {
     }
 
     _wireRightClickMenu() {
-        const c = this.container;
-        c.connect('button-press-event', (_a, event) => {
-            if (event.get_button() !== 3)
-                return Clutter.EVENT_PROPAGATE;
+        const openMenuAt = (event) => {
             const [x, y] = event.get_coords();
             Main.layoutManager.setDummyCursorGeometry(x, y, 0, 0);
             this._contextMenu.open(BoxPointer.PopupAnimation.FULL);
+        };
+        const handler = (_a, event) => {
+            if (event.get_button() !== 3)
+                return Clutter.EVENT_PROPAGATE;
+            openMenuAt(event);
             return Clutter.EVENT_STOP;
-        });
+        };
+        this.container.connect('button-press-event', handler);
+        this._resizeGrip.connect('button-press-event', handler);
     }
 
     // ---- Fullscreen handling -------------------------------------------
